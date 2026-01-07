@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PDF → PowerPoint（教員完成版）</title>
+
+<!-- pdf.js -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+</script>
+
+<!-- PptxGenJS -->
+<script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
+
+<style>
+body {
+  font-family: "Segoe UI", sans-serif;
+  background: #f5f5f5;
+  padding: 20px;
+}
+.container {
+  max-width: 540px;
+  margin: auto;
+  background: white;
+  padding: 20px;
+  border-radius: 12px;
+}
+h2 { text-align: center; }
+label { display: block; margin: 12px 0; }
+button {
+  width: 100%;
+  padding: 12px;
+  font-size: 16px;
+  background: #2a7fff;
+  color: white;
+  border: none;
+  border-radius: 8px;
+}
+.status {
+  margin-top: 15px;
+  text-align: center;
+  font-size: 14px;
+}
+</style>
+</head>
+
+<body>
+<div class="container">
+  <h2>PDF → PowerPoint<br>（授業準備 完成版）</h2>
+
+  <label>
+    📄 PDFファイルを選択
+    <input type="file" id="pdfFile" accept="application/pdf">
+  </label>
+
+  <button onclick="convert()">PowerPointに変換する</button>
+
+  <div class="status" id="status"></div>
+</div>
+
+<script>
+async function convert() {
+  const file = document.getElementById("pdfFile").files[0];
+  if (!file) {
+    alert("PDFファイルを選択してください");
+    return;
+  }
+
+  const status = document.getElementById("status");
+  status.textContent = "変換中です…";
+
+  const buffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+  const pptx = new PptxGenJS();
+
+  for (let i = 1; i <= pdf.numPages; i++) {
+    status.textContent = `変換中：${i} / ${pdf.numPages} ページ`;
+
+    const page = await pdf.getPage(i);
+    const viewport = page.getViewport({ scale: 2.5 });
+
+    const canvas = document.createElement("canvas");
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+
+    await page.render({
+      canvasContext: canvas.getContext("2d"),
+      viewport
+    }).promise;
+
+    const slide = pptx.addSlide();
+    slide.addImage({
+      data: canvas.toDataURL("image/png"),
+      x: 0,
+      y: 0,
+      w: "100%",
+      h: "100%"
+    });
+  }
+
+  pptx.writeFile("PDF_to_PowerPoint_授業用.pptx");
+  status.textContent = "完成しました！";
+}
+</script>
+</body>
+</html>
