@@ -1,0 +1,67 @@
+async function preview() {
+  const file = document.getElementById("pdfFile").files[0];
+  if (!file) {
+    alert("PDFファイルを選択してください");
+    return;
+  }
+
+  const previewArea = document.getElementById("previewArea");
+  previewArea.innerHTML = "プレビュー生成中…";
+
+  const mode = document.querySelector('input[name="mode"]:checked').value;
+  const trim = (mode === "projection");
+  const ratio = (mode === "projection") ? 0.18 : 0.0;
+  const split = document.getElementById("splitPage").checked;
+
+  const buffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+
+  previewArea.innerHTML = "";
+
+  for (let i = 1; i <= Math.min(pdf.numPages, 3); i++) {
+    const page = await pdf.getPage(i);
+    const viewport = page.getViewport({ scale: 1.2 });
+
+    const canvas = document.createElement("canvas");
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    await page.render({
+      canvasContext: canvas.getContext("2d"),
+      viewport
+    }).promise;
+
+    let sx = 0, sy = 0, sw = canvas.width, sh = canvas.height;
+    if (trim) {
+      sx = canvas.width * ratio;
+      sy = canvas.height * ratio;
+      sw = canvas.width * (1 - ratio * 2);
+      sh = canvas.height * (1 - ratio * 2);
+    }
+
+    const makePreview = (y, h, label) => {
+      const c = document.createElement("canvas");
+      c.width = sw;
+      c.height = h;
+      c.getContext("2d").drawImage(
+        canvas,
+        sx, sy + y, sw, h,
+        0, 0, sw, h
+      );
+
+      const wrapper = document.createElement("div");
+      wrapper.style.marginBottom = "10px";
+      wrapper.innerHTML = `<strong>${label}</strong><br>`;
+      wrapper.appendChild(c);
+
+      previewArea.appendChild(wrapper);
+    };
+
+    if (split) {
+      const half = sh / 2;
+      makePreview(0, half, `PDF ${i}ページ（上）`);
+      makePreview(half, half, `PDF ${i}ページ（下）`);
+    } else {
+      makePreview(0, sh, `PDF ${i}ページ`);
+    }
+  }
+}
