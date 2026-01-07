@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PDF → PowerPoint（数学教員用・完成版）</title>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
+
+<style>
+body {
+  font-family: "Segoe UI", sans-serif;
+  background: #f4f4f4;
+  padding: 20px;
+}
+.container {
+  max-width: 600px;
+  margin: auto;
+  background: white;
+  padding: 20px;
+  border-radius: 12px;
+}
+h2 { text-align: center; }
+label { display: block; margin: 10px 0; }
+button {
+  width: 100%;
+  padding: 12px;
+  font-size: 16px;
+  background: #2a7fff;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  margin-top: 10px;
+}
+button.secondary {
+  background: #777;
+}
+.preview canvas {
+  width: 100%;
+  margin-bottom: 10px;
+  border: 1px solid #ccc;
+}
+.preview div {
+  margin-bottom: 15px;
+}
+.status {
+  margin-top: 10px;
+  text-align: center;
+  font-size: 14px;
+}
+</style>
+</head>
+
+<body>
+<div class="container">
+  <h2>PDF → PowerPoint<br>（数学教員用 完成版）</h2>
+
+  <label>
+    📄 PDFファイルを選択
+    <input type="file" id="pdfFile" accept="application/pdf">
+  </label>
+
+  <label><strong>出力形式</strong></label>
+  <label>
+    <input type="radio" name="mode" value="projection" checked>
+    投影用（余白なし・板書向け）
+  </label>
+  <label>
+    <input type="radio" name="mode" value="handout">
+    生徒配布用（余白あり・書き込み用）
+  </label>
+
+  <label>
+    <input type="checkbox" id="splitPage">
+    1ページを上下2枚に分割（問題／解説）
+  </label>
+
+  <button class="secondary" onclick="preview()">プレビュー表示</button>
+
+  <div id="previewArea" class="preview"></div>
+
+  <button onclick="convert()">この内容でPowerPointを作成</button>
+
+  <div id="status" class="status"></div>
+</div>
+
+<script>
+async function loadPDF() {
+  const file = document.getElementById("pdfFile").files[0];
+  if (!file) throw "PDFを選択してください";
+  const buffer = await file.arrayBuffer();
+  return pdfjsLib.getDocument({ data: buffer }).promise;
+}
+
+function getSettings() {
+  const mode = document.querySelector('input[name="mode"]:checked').value;
+  return {
+    trim: mode === "projection",
+    ratio: mode === "projection" ? 0.18 : 0,
+    split: document.getElementById("splitPage").checked,
+    mode
+  };
+}
+
+async function preview() {
+  const previewArea = document.getElementById("previewArea");
+  previewArea.innerHTML = "プレビュー生成中…";
+
+  const pdf = await loadPDF();
+  const { trim, ratio, split } = getSettings();
+
+  previewArea.innerHTML = "";
+
+  for (let i = 1; i <= Math.min(pdf.numPages, 3); i++) {
+    const page = await pdf.getPage(i);
+    const viewport = page.getViewport({ scale: 1.2 });
+
+    const canvas = document.createElement("canvas");
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+
+    let sx = 0, sy = 0, sw = canvas.width, sh = canvas.height;
+    if (trim) {
+      sx = canvas.width * ratio;
+      sy = canvas.height * ratio;
+      sw = canvas.width * (1 - ratio * 2);
+      sh = canvas.height * (1 - ratio * 2);
+    }
+
+    const draw = (y, h, label) => {
+      const c = document.createElement("canvas");
+      c.width = sw;
+      c.height = h;
+      c.getContext("2d").drawImage(canvas, sx, sy + y, sw, h, 0, 0, sw, h);
+      const box = document.createElement("div");
+      box.innerHTML = `<strong>${label}</strong>`;
+      box.appendChild(c);
+      previewArea.appendChild(box);
+    };
+
+    if (split) {
+      draw(0, sh / 2, `PDF ${i}ページ（問題）`);
+      draw(sh / 2, sh / 2, `PDF ${i}ページ（解説）`);
+    } else {
+      draw(0, sh, `PDF ${i}ページ`);
+    }
+  }
+}
+
+async function convert() {
+  const status = document.getElementById("status");
+  status.textContent = "PowerPoint作成中…";
+
+  const pdf = await loadPDF();
+  const { trim, ratio, split, mode } = getSettings();
+  const pptx = new PptxGenJS();
+
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const viewport = page.getViewport({ scale: 2.5 });
+
+    const canvas = document.createElement("canvas");
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+
+    let sx = 0, sy = 0, sw = canvas.width, sh = canvas.height;
+    if (trim) {
+      sx = canvas.width * ratio;
+      sy = canvas.height * ratio;
+      sw = canvas.width * (1 - ratio * 2);
+      sh = canvas.height * (1 - ratio * 2);
+    }
+
+    const addSlide = (y, h, title) => {
+      const c = document.createElement("canvas");
+      c.width = sw;
+      c.height = h;
+      c.getContext("2d").drawImage(canvas, sx, sy + y, sw, h, 0, 0, sw, h);
+
+      const slide = pptx.addSlide();
+      slide.addText(title, { x: 0.3, y: 0.2, fontSize: 18, bold: true });
+      slide.addImage({ data: c.toDataURL(), x: 0, y: 0.8, w: "100%", h: "90%" });
+    };
+
+    if (split) {
+      addSlide(0, sh / 2, `問題（PDF ${i}ページ）`);
+      addSlide(sh / 2, sh / 2, `解説（PDF ${i}ページ）`);
+    } else {
+      addSlide(0, sh, `PDF ${i}ページ`);
+    }
+  }
+
+  const filename =
+    mode === "projection"
+      ? "PDF_to_PPT_投影用.pptx"
+      : "PDF_to_PPT_生徒配布用.pptx";
+
+  pptx.writeFile(filename);
+  status.textContent = "完成しました！";
+}
+</script>
+</body>
+</html>
